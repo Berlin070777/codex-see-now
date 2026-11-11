@@ -2,17 +2,19 @@
 
 **简体中文** · [English](README.en.md)
 
-让 Codex 看着你操作屏幕。选择屏幕、窗口、摄像头或本地视频后，See Now 在本机筛选有变化的帧，拼成带编号和时间的图。桌面版能在画面变化时主动请 Codex 分析，你也可以在悬浮窗里追问或打断。
+让 Codex 看着你操作屏幕。选一个窗口或框出一块区域，See Now 会在本机筛出关键帧。画面有变化时，Codex 可以在悬浮窗里主动汇报，你也可以随时追问。
 
-项目移植自 [dsh-see-now](https://github.com/SAOS-3624/dsh-see-now)，原项目作者是 [SAOS-3624](https://github.com/SAOS-3624)。See Now 复用了原项目的变化检测、选帧与拼图代码，并为 Codex 接入了独立桌面客户端和 MCP 插件。
+[独立桌面客户端](#独立桌面客户端) · [Codex MCP 插件](#codex-mcp-插件)
 
-![四个合成画面按时间排成一张图，依次标记 1 至 4](docs/images/contact-sheet.png)
+![See Now 演示。左侧预览待观察的导出窗口，中间两张关键帧记录进度从 42% 到 100%，右侧 Codex 在悬浮窗里确认导出完成。](docs/images/desktop-demo.png)
 
-*合成示例。四格对应 0、2、4、6 秒。实际使用时，客户端会同时显示帧号、时间和保留原因。*
+*演示使用模拟的导出窗口。See Now 保留进度变化前后的画面，Codex 据此回答「导出完成了吗？」。*
 
 ## 独立桌面客户端
 
-本地运行需要 Node.js 22+ 和可从 `PATH` 找到的 Codex CLI。桌面版通过 Electron 采集；旧版 MCP 插件的 FFmpeg 依赖见下方。
+适合持续观察、自动汇报和悬浮窗追问。运行需要 Node.js 22+ 和可从 `PATH` 找到的 Codex CLI。目前已在 macOS 验证。
+
+### 快速开始
 
 ```sh
 git clone https://github.com/Berlin070777/codex-see-now.git
@@ -21,13 +23,11 @@ npm ci
 npm start
 ```
 
-在 macOS 上使用屏幕、摄像头或麦克风时，按系统提示授权。录屏权限在「系统设置 → 隐私与安全性 → 屏幕与系统音频录制」。系统音频采集取决于系统、所选来源和 Electron 的授权状态。macOS 打包配置包含音频用途说明。
+1. **连接 Codex。** 在「账号」里选择 ChatGPT、本机 Codex 或 OpenAI API Key。若要复用本机登录，可先运行 `codex login`，再点 **使用本机 Codex**。
+2. **选择画面。** 在 macOS 15 及以上，点击 **用 macOS 选择窗口**，选中窗口后可在预览上拖动框选。还可加载屏幕和窗口列表，或使用摄像头、OBS 虚拟摄像头、本地视频。若列表提示缺少录屏权限，在「系统设置 → 隐私与安全性 → 屏幕与系统音频录制」授权后重启 See Now。
+3. **开始观察。** 点击 **开始观察**。开启「变化时自动分析」后，画面变化会触发回复。也可以在悬浮窗追问，或点击 **看一眼** 手动观察。点击 **停止** 结束采集。
 
-1. 在 **账号** 里选择连接方式。要复用当前本机 Codex 登录，可以先在终端运行 `codex login`，再点 **使用本机 Codex**。
-2. 在 **采集设置** 中，macOS 15 及以上可点 **用 macOS 选择窗口**，在系统选择器选中窗口。也可加载屏幕和窗口列表、选摄像头（包括系统可见的 OBS 虚拟摄像头）或打开本地视频。预览出现后可拖动框选区域。列表如提示需要录屏权限，可打开系统设置授权并重启 See Now。
-3. 选择画质和节奏，点击 **开始观察**。勾选自动分析后，画面变化会触发同一个 See Now 会话里的新回复。可以调高攒图张数，减少请求次数。
-4. 可以在观察中切换 **Codex 模型**。当前回复会继续，下一轮使用新选的模型。
-5. 用悬浮窗追问，或点 **看一眼** 发出一次主动观察。**停止**会结束采集、清空待发内容并尝试中断正在运行的 Codex 回复。
+### 账号与模型
 
 | 连接方式 | 使用方式 |
 | --- | --- |
@@ -35,7 +35,7 @@ npm start
 | 本机 Codex | 使用 Codex CLI 已保存的认证，适合本机开发和自用。 |
 | OpenAI API Key | 填写自己的 Platform API Key，按 API 用量计费。 |
 
-模型列表跟随当前连接方式和账号权限。可以刷新列表，或为自定义模型输入模型 ID。客户端创建自己的观察会话。登录授权、续期和 API Key 在主进程处理，凭据通过操作系统凭据存储加密。ChatGPT 套餐授权详情见 [OpenAI 接入文档](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)。
+模型列表跟随当前连接方式和账号权限。可以刷新列表或手动输入模型 ID。观察中也可切换模型，下一轮回复使用新模型。客户端创建自己的观察会话。登录授权、续期和 API Key 在主进程处理，凭据通过操作系统凭据存储加密。ChatGPT 套餐授权详情见 [OpenAI 接入文档](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)。
 
 ## 功能与兼容性
 
@@ -56,7 +56,7 @@ npm start
 
 ## Codex MCP 插件
 
-在官方 Codex 聊天里按需看一小段屏幕时，可以继续使用原有插件。插件支持 macOS，并需要 Node.js 20.3+ 和带 AVFoundation 的 FFmpeg。
+想在官方 Codex 聊天里临时观察几秒屏幕，可以直接安装 MCP 插件。插件支持 macOS，需要 Node.js 20.3+ 和带 AVFoundation 的 FFmpeg。
 
 ```sh
 brew install node ffmpeg
