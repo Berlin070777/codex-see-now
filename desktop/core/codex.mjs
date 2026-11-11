@@ -99,7 +99,7 @@ export class AppServer extends EventEmitter {
   }
 
   async initialize() {
-    await this.request('initialize', { clientInfo: { name: NAME, title: 'See Now', version: '0.2.2' } });
+    await this.request('initialize', { clientInfo: { name: NAME, title: 'See Now', version: '0.2.3' } });
     this.#write({ method: 'initialized', params: {} });
   }
 
@@ -162,12 +162,11 @@ export class Conversation extends EventEmitter {
   #credentials;
   #server;
   #identity;
-  #threadId;
+  #thread;
   #turnId;
   #pendingTurn;
   #terminal;
   #model;
-  #threadModel;
   #active;
   #closing = false;
 
@@ -185,6 +184,7 @@ export class Conversation extends EventEmitter {
     if (this.#server && this.#identity === identity) return this.#server;
     const old = this.#server;
     this.#server = undefined;
+    this.#thread = undefined;
     old?.close();
     const server = new AppServer({ cwd: this.#cwd, auth });
     this.#server = server;
@@ -192,10 +192,11 @@ export class Conversation extends EventEmitter {
     server.on('disconnect', (error) => {
       if (this.#server !== server) return;
       this.#server = undefined;
+      this.#thread = undefined;
       this.#terminal?.(error);
     });
     server.on('notification', ({ method, params }) => {
-      if (params?.threadId !== this.#threadId || !this.#active) return;
+      if (this.#server !== server || !this.#thread || params?.threadId !== this.#thread.id || !this.#active) return;
       if (method === 'turn/started') this.#turnId = params.turn.id;
       if (method === 'model/rerouted') this.emit('rerouted', params.toModel, params.fromModel);
       if (method === 'item/agentMessage/delta') this.emit('delta', params.delta);
@@ -210,7 +211,6 @@ export class Conversation extends EventEmitter {
 
     try {
       await server.initialize();
-      if (this.#threadId) await server.request('thread/resume', { threadId: this.#threadId });
       return server;
     } catch (error) {
       server.close();
@@ -238,18 +238,22 @@ export class Conversation extends EventEmitter {
     this.#pendingTurn = new Promise((resolve) => { started = resolve; });
     try {
       const server = await this.#connect();
-      if (!this.#threadId) {
-        const thread = await server.request('thread/start', {
+      if (!this.#thread) {
+        const { thread, model: defaultModel } = await server.request('thread/start', {
           cwd: this.#cwd,
+          ephemeral: true,
           developerInstructions: INSTRUCTIONS,
           approvalPolicy: 'never',
           sandbox: 'read-only',
         });
-        this.#threadId = thread.thread.id;
-        this.#threadModel = thread.model;
+        if (this.#closing) throw new Error('Observation stopped.');
+        if (this.#server !== server) throw new Error('The Codex connection is closed.');
+        if (thread?.ephemeral !== true) throw new Error('Update Codex CLI to use temporary observation chats.');
+        this.#thread = { id: thread.id, model: defaultModel };
       }
       if (this.#closing) throw new Error('Observation stopped.');
-      this.emit('turn', text, model || this.#threadModel);
+      const selectedModel = model || this.#thread.model;
+      this.emit('turn', text, selectedModel);
       const completed = new Promise((resolve) => {
         this.#terminal = resolve;
       });
@@ -259,7 +263,7 @@ export class Conversation extends EventEmitter {
         input.push({ type: 'text', text: times }, imageInput(sheet));
       }
       const result = await server.request('turn/start', {
-        threadId: this.#threadId, input, ...((model || this.#threadModel) ? { model: model || this.#threadModel } : {}),
+        threadId: this.#thread.id, input, ...(selectedModel ? { model: selectedModel } : {}),
       });
       this.#turnId = result.turn.id;
       started(true);
@@ -280,10 +284,10 @@ export class Conversation extends EventEmitter {
 
   async steer(text) {
     if (!this.#turnId && !await this.#pendingTurn) return false;
-    if (!this.#turnId || !this.#server) return false;
+    if (!this.#turnId || !this.#server || !this.#thread) return false;
     try {
       await this.#server.request('turn/steer', {
-        threadId: this.#threadId,
+        threadId: this.#thread.id,
         expectedTurnId: this.#turnId,
         input: [{ type: 'text', text }],
       });
@@ -298,11 +302,11 @@ export class Conversation extends EventEmitter {
     if (this.#closing) return;
     this.#closing = true;
     const server = this.#server;
-    if (this.#turnId && server) {
+    if (this.#turnId && server && this.#thread) {
       let timer;
       try {
         await Promise.race([
-          server.request('turn/interrupt', { threadId: this.#threadId, turnId: this.#turnId }),
+          server.request('turn/interrupt', { threadId: this.#thread.id, turnId: this.#turnId }),
           new Promise((resolve) => { timer = setTimeout(resolve, 750); }),
         ]);
       } catch { /* The turn may have just completed. */ }

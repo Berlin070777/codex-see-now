@@ -35,7 +35,7 @@ npm start
 | 本机 Codex | 使用 Codex CLI 已保存的认证，适合本机开发和自用。 |
 | OpenAI API Key | 填写自己的 Platform API Key，按 API 用量计费。 |
 
-模型列表跟随当前连接方式和账号权限。可以刷新列表或手动输入模型 ID。观察中也可切换模型，下一轮回复使用新模型。客户端创建自己的观察会话。登录授权、续期和 API Key 在主进程处理，凭据通过操作系统凭据存储加密。ChatGPT 套餐授权详情见 [OpenAI 接入文档](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)。
+模型列表跟随当前连接方式和账号权限。可以刷新列表或手动输入模型 ID。观察中也可切换模型，下一轮回复使用新模型。桌面端在同一次观察中复用临时会话，汇报和追问不会占用 Codex 对话列表。停止观察或重连后，模型会从新的临时会话开始。登录授权、续期和 API Key 在主进程处理，凭据通过操作系统凭据存储加密。ChatGPT 套餐授权详情见 [OpenAI 接入文档](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)。
 
 ## 功能与兼容性
 
@@ -48,7 +48,7 @@ npm start
 | 语音与音频 | 可朗读回复。可选系统音频、视频音轨或麦克风，使用用户设置的 OpenAI 兼容转写服务。拼图可附响度条，转写会附时间。 |
 | 平台 | 桌面代码使用 Electron 的跨平台媒体接口。macOS 是当前验证平台。Windows 和 Linux 的设备、权限及系统音频仍需真机验证。 |
 
-原版的 DSH `/seenow` 命令由菜单栏、开始/停止和悬浮窗控制替代。DeepSeek 的图像 token 档位、DSH 的历史附件管理和转写服务由对应宿主决定。独立客户端使用自己的 Codex 会话，官方 Codex 桌面聊天里的 MCP 插件仍可独立使用。
+原版的 DSH `/seenow` 命令由菜单栏、开始/停止和悬浮窗控制替代。DeepSeek 的图像 token 档位、DSH 的历史附件管理和转写服务由对应宿主决定。MCP 插件直接把观察结果交给当前 Codex 对话。
 
 ## 音频转写
 

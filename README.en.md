@@ -35,7 +35,7 @@ npm start
 | Local Codex | Reuses the local Codex CLI credentials for development and personal use. |
 | OpenAI API key | Uses your own Platform API key and API billing. |
 
-Model availability depends on the selected connection and account permissions. Refresh the list or enter a custom model ID. You can switch models while observing. The new model applies to the next reply. The app creates its own observation conversations. Authorization, refresh, and API credentials are handled in the main process, with credentials encrypted using the operating system credential store. See the [OpenAI integration guide](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server) for ChatGPT plan authorization.
+Model availability depends on the selected connection and account permissions. Refresh the list or enter a custom model ID. You can switch models while observing. The new model applies to the next reply. The desktop app reuses a temporary chat for updates and follow-up questions within an observation. These chats stay out of the Codex chat list. Stopping or reconnecting starts a fresh context for the next analysis. Authorization, refresh, and API credentials are handled in the main process, with credentials encrypted using the operating system credential store. See the [OpenAI integration guide](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server) for ChatGPT plan authorization.
 
 ## Features and compatibility
 
@@ -48,7 +48,7 @@ Model availability depends on the selected connection and account permissions. R
 | Speech and audio | Optional read-aloud replies. System audio, file audio, or microphone input can be sent to an OpenAI-compatible transcription service you configure. Sheets can show audio levels and transcripts include timestamps. |
 | Platforms | Uses Electron’s cross-platform capture interfaces. macOS is the current verification platform. Windows and Linux device selection, permissions, and system audio still need testing on those systems. |
 
-The menu bar, observation controls, and companion window take the place of DSH’s `/seenow` command. DeepSeek image token tiers, DSH attachment history, and DSH’s transcription integration belong to their respective hosts. The standalone client uses its own Codex conversations, and the MCP plugin remains available for the official Codex desktop chat.
+The menu bar, observation controls, and companion window take the place of DSH’s `/seenow` command. DeepSeek image token tiers, DSH attachment history, and DSH’s transcription integration belong to their respective hosts. The MCP plugin returns its results to the current Codex chat.
 
 ## Audio transcription
 
