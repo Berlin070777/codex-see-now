@@ -1,0 +1,12 @@
+{
+  "name": "see-now-plugins",
+  "interface": { "displayName": "See Now Plugins" },
+  "plugins": [
+    {
+      "name": "codex-see-now",
+      "source": { "source": "local", "path": "./plugins/codex-see-now" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "codex-see-now",
+  "version": "0.1.0",
+  "description": "Watch a selected area of your Mac screen and review changed frames as numbered contact sheets.",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "interface": { "displayName": "See Now" }
+    }
+  }
+}
