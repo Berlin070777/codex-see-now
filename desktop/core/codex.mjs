@@ -99,7 +99,7 @@ export class AppServer extends EventEmitter {
   }
 
   async initialize() {
-    await this.request('initialize', { clientInfo: { name: NAME, title: 'See Now', version: '0.2.0' } });
+    await this.request('initialize', { clientInfo: { name: NAME, title: 'See Now', version: '0.2.1' } });
     this.#write({ method: 'initialized', params: {} });
   }
 
@@ -127,6 +127,31 @@ export class AppServer extends EventEmitter {
   }
 }
 
+export async function listCodexModels(cwd, auth) {
+  const server = new AppServer({ cwd, auth });
+  const models = new Map();
+  try {
+    await server.initialize();
+    let cursor;
+    const seen = new Set();
+    do {
+      const page = await server.request('model/list', { includeHidden: false, limit: 100, cursor });
+      for (const row of page.data ?? []) {
+        const id = row.model || row.id;
+        if (id && !row.hidden && (!row.inputModalities || row.inputModalities.includes('image'))) {
+          models.set(id, { id, name: row.displayName || id, isDefault: Boolean(row.isDefault) });
+        }
+      }
+      cursor = page.nextCursor;
+      if (cursor && seen.has(cursor)) throw new Error('Codex returned a repeated model-list cursor.');
+      if (cursor) seen.add(cursor);
+    } while (cursor);
+    return [...models.values()];
+  } finally {
+    server.close();
+  }
+}
+
 function imageInput(sheet) {
   const bytes = sheet.image ?? sheet.png;
   return { type: 'image', url: `data:${sheet.mimeType ?? 'image/png'};base64,${bytes.toString('base64')}` };
@@ -142,6 +167,7 @@ export class Conversation extends EventEmitter {
   #pendingTurn;
   #terminal;
   #model;
+  #threadModel;
   #active;
   #closing = false;
 
@@ -171,6 +197,7 @@ export class Conversation extends EventEmitter {
     server.on('notification', ({ method, params }) => {
       if (params?.threadId !== this.#threadId || !this.#active) return;
       if (method === 'turn/started') this.#turnId = params.turn.id;
+      if (method === 'model/rerouted') this.emit('rerouted', params.toModel, params.fromModel);
       if (method === 'item/agentMessage/delta') this.emit('delta', params.delta);
       if (method === 'item/completed' && params.item?.type === 'agentMessage') {
         this.emit('message', params.item.text, params.item.phase);
@@ -198,9 +225,14 @@ export class Conversation extends EventEmitter {
     if (!result.account) throw new Error('Run codex login, or select another sign-in method.');
   }
 
+  setModel(model) {
+    this.#model = model;
+  }
+
   async ask({ text, sheets = [] }) {
     if (this.#closing || this.#active) throw new Error('The observation is busy or stopped.');
     this.#active = true;
+    const model = this.#model;
     let started;
     let timer;
     this.#pendingTurn = new Promise((resolve) => { started = resolve; });
@@ -212,12 +244,12 @@ export class Conversation extends EventEmitter {
           developerInstructions: INSTRUCTIONS,
           approvalPolicy: 'never',
           sandbox: 'read-only',
-          ...(this.#model ? { model: this.#model } : {}),
         });
         this.#threadId = thread.thread.id;
+        this.#threadModel = thread.model;
       }
       if (this.#closing) throw new Error('Observation stopped.');
-      this.emit('turn', text);
+      this.emit('turn', text, model || this.#threadModel);
       const completed = new Promise((resolve) => {
         this.#terminal = resolve;
       });
@@ -226,7 +258,9 @@ export class Conversation extends EventEmitter {
         const times = sheet.frames.map((frame, i) => `#${i + 1} at ${frame.t.toFixed(2)}s`).join(', ');
         input.push({ type: 'text', text: times }, imageInput(sheet));
       }
-      const result = await server.request('turn/start', { threadId: this.#threadId, input });
+      const result = await server.request('turn/start', {
+        threadId: this.#threadId, input, ...((model || this.#threadModel) ? { model: model || this.#threadModel } : {}),
+      });
       this.#turnId = result.turn.id;
       started(true);
       timer = setTimeout(() => {

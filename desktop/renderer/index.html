@@ -64,6 +64,9 @@
         <label>转写模型<input id="asr-model" placeholder="模型名称"></label>
         <label>转写 API Key（可选）<input id="asr-key" type="password" autocomplete="off"></label>
       </details>
+      <label>Codex 模型<select id="model"><option value="">使用默认模型</option></select></label>
+      <label id="custom-model-field" hidden>模型 ID<input id="custom-model" autocomplete="off" spellcheck="false" placeholder="输入模型 ID"></label>
+      <div class="section-head"><span id="model-status" class="caption" role="status"></span><button id="refresh-models" class="quiet" type="button">刷新模型</button></div>
       <div class="pair actions"><button id="start" class="primary">开始观察</button><button id="stop" class="secondary" disabled>停止</button></div>
       <p id="error" class="error" role="alert" hidden></p>
     </section>
@@ -75,7 +78,6 @@
       <div class="pair"><button id="local" class="secondary">使用本机 Codex</button><button id="signout" class="secondary">断开</button></div>
       <label>OpenAI API Key<input id="api-key" type="password" autocomplete="off" placeholder="sk-…"></label>
       <div class="pair"><button id="api" class="secondary">使用 API Key</button><button id="usage" class="quiet">查看套餐用量</button></div>
-      <label>Codex 模型<input id="model" list="models" placeholder="使用默认模型"><datalist id="models"></datalist></label>
     </section>
   </aside>
 </main>

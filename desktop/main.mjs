@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { Accounts } from './core/auth.mjs';
-import { Conversation } from './core/codex.mjs';
+import { Conversation, listCodexModels } from './core/codex.mjs';
 import { Observer, PACES, QUALITY } from './core/observer.mjs';
 import { transcribe, transcriptionUrl } from './core/transcribe.mjs';
 
@@ -26,6 +26,7 @@ const smoke = process.argv.includes('--ui-smoke');
 const icon = nativeImage.createFromPath(join(here, 'assets', 'tray.png'));
 
 app.setName('See Now');
+if (smoke && process.env.SEE_NOW_SMOKE_USER_DATA) app.setPath('userData', process.env.SEE_NOW_SMOKE_USER_DATA);
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => showDashboard());
@@ -59,14 +60,62 @@ function makeWindow(page, options) {
   return window;
 }
 
+function alive(window) {
+  return Boolean(window && !window.isDestroyed() && !window.webContents.isDestroyed());
+}
+
+function watchBounds(window) {
+  for (const event of ['hide', 'show', 'minimize', 'restore', 'move', 'resize']) window.on(event, enforceCaptureBounds);
+}
+
+function dashboardWindow() {
+  if (alive(dashboard)) return dashboard;
+  const window = makeWindow('index.html', { title: 'See Now · Dashboard', width: 1020, height: 760, minWidth: 720, minHeight: 580 });
+  dashboard = window;
+  watchBounds(window);
+  window.on('close', (event) => {
+    if (!quitting) { event.preventDefault(); window.hide(); }
+  });
+  window.on('closed', () => {
+    if (dashboard !== window) return;
+    dashboard = undefined;
+    if (!quitting) void stop();
+  });
+  return window;
+}
+
+function companionWindow() {
+  if (alive(companion)) return companion;
+  const window = makeWindow('overlay.html', {
+    title: 'See Now · Companion', width: 390, height: 300, minWidth: 300, minHeight: 240,
+    alwaysOnTop: true, skipTaskbar: true, titleBarStyle: 'hidden',
+  });
+  companion = window;
+  watchBounds(window);
+  window.on('close', (event) => {
+    if (!quitting) {
+      event.preventDefault();
+      window.hide();
+      void stop();
+    }
+  });
+  window.on('closed', () => {
+    if (companion === window) companion = undefined;
+    if (!quitting) enforceCaptureBounds();
+  });
+  return window;
+}
+
 function showDashboard() {
-  dashboard?.show();
-  dashboard?.focus();
+  if (quitting || !accounts || !app.isReady()) return;
+  const window = dashboardWindow();
+  window.show();
+  if (alive(window)) window.focus();
   enforceCaptureBounds();
 }
 
 function send(window, payload) {
-  if (window && !window.isDestroyed()) window.webContents.send('see:event', payload);
+  if (alive(window)) window.webContents.send('see:event', payload);
 }
 
 function broadcast(type, data) {
@@ -89,6 +138,7 @@ function safeOverlayPlacement() {
     left: x + region.x * width, top: y + region.y * height,
     right: x + (region.x + region.width) * width, bottom: y + (region.y + region.height) * height,
   };
+  if (!alive(companion)) return false;
   const [w, h] = companion.getSize();
   for (const { workArea: area } of screen.getAllDisplays()) {
     const corners = [[area.x + 10, area.y + 10], [area.x + area.width - w - 10, area.y + 10],
@@ -105,7 +155,7 @@ function safeOverlayPlacement() {
 }
 
 function overlapsDisplay(window, active) {
-  if (!window?.isVisible() || window.isMinimized()) return false;
+  if (!alive(window) || !window.isVisible() || window.isMinimized()) return false;
   const display = screen.getAllDisplays().find(({ id }) => String(id) === active.source.display_id);
   if (!display) return true;
   const { x, y, width, height } = display.bounds;
@@ -124,13 +174,15 @@ function enforceCaptureBounds() {
 }
 
 function showCompanion() {
+  if (quitting || !accounts || !app.isReady()) return;
+  const window = companionWindow();
   safeOverlayPlacement();
-  companion.showInactive();
+  window.showInactive();
   enforceCaptureBounds();
 }
 
 function confirmSource(event) {
-  const owner = [dashboard, companion].find((window) => window && !window.isDestroyed() && window.webContents === event.sender);
+  const owner = [dashboard, companion].find((window) => alive(window) && window.webContents === event.sender);
   if (!owner || event.senderFrame !== owner.webContents.mainFrame) throw new Error('Invalid See Now request origin.');
 }
 
@@ -153,12 +205,12 @@ function validateRegion(region) {
 function registerMedia() {
   const ses = session.defaultSession;
   ses.setPermissionCheckHandler((contents, permission) =>
-    contents === dashboard.webContents && ['media', 'display-capture'].includes(permission));
+    alive(dashboard) && contents === dashboard.webContents && ['media', 'display-capture'].includes(permission));
   ses.setPermissionRequestHandler((contents, permission, callback) => {
-    callback(contents === dashboard.webContents && ['media', 'display-capture'].includes(permission));
+    callback(alive(dashboard) && contents === dashboard.webContents && ['media', 'display-capture'].includes(permission));
   });
   ses.setDisplayMediaRequestHandler((request, callback) => {
-    if (!observation?.source || !observation.mediaReady || request.frame !== dashboard.webContents.mainFrame) {
+    if (!observation?.source || !observation.mediaReady || !alive(dashboard) || request.frame !== dashboard.webContents.mainFrame) {
       callback({});
       return;
     }
@@ -169,7 +221,8 @@ function registerMedia() {
 
 async function listSources() {
   const items = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 640, height: 400 } });
-  const own = new Set([dashboard.getMediaSourceId(), companion.getMediaSourceId()].map((id) => id.split(':').slice(0, 2).join(':')));
+  const own = new Set([dashboard, companion].filter(alive)
+    .map((window) => window.getMediaSourceId().split(':').slice(0, 2).join(':')));
   sources = new Map(items.filter((item) => !own.has(item.id.split(':').slice(0, 2).join(':'))).map((item) => [item.id, item]));
   return [...sources.values()].map((item) => ({
     id: item.id, name: item.name, thumbnail: item.thumbnail.isEmpty() ? null : item.thumbnail.toDataURL(),
@@ -188,7 +241,7 @@ async function start(options) {
     key: String(options.audio.key ?? '').trim(),
   } : null;
   if (audio && !audio.model) throw new Error('Enter the transcription model.');
-  const model = String(options.model ?? '').trim().slice(0, 100);
+  const model = modelId(options.model);
   starting = true;
   const epoch = ++startEpoch;
   const conversation = new Conversation({ cwd, model, credentials: () => accounts.getCredentials() });
@@ -219,10 +272,12 @@ async function start(options) {
   };
   observation = active;
   let latestMessage = '';
-  conversation.on('turn', () => {
+  conversation.on('turn', (_text, modelInUse) => {
     latestMessage = '';
     broadcast('turn');
+    broadcast('model-in-use', { id: modelInUse });
   });
+  conversation.on('rerouted', (id, from) => broadcast('model-in-use', { id, from }));
   conversation.on('delta', (delta) => broadcast('delta', delta));
   conversation.on('message', (message, phase) => {
     if (phase !== 'commentary') latestMessage = message;
@@ -305,6 +360,24 @@ async function handleAudio(payload) {
   }
 }
 
+function modelId(value) {
+  const id = String(value ?? '').trim();
+  if (id && !/^[a-zA-Z0-9_.:/-]{1,100}$/.test(id)) throw new Error('Enter a valid Codex model ID.');
+  return id;
+}
+
+async function availableModels() {
+  const { mode } = accounts.status();
+  if (mode === 'local') return listCodexModels(cwd);
+  const authorized = await accounts.models();
+  if (mode === 'plan') return authorized;
+
+  // Platform model lists include embeddings, audio and other non-vision models.
+  const known = await listCodexModels(cwd, await accounts.getCredentials()).catch(() => []);
+  const byId = new Map(known.map((model) => [model.id, model]));
+  return authorized.flatMap(({ id }) => byId.has(id) ? [byId.get(id)] : []);
+}
+
 function registerHandlers() {
   handler('info', () => ({ state: lastState, paces: Object.keys(PACES), quality: QUALITY, smoke }));
   handler('sources', listSources);
@@ -313,13 +386,14 @@ function registerHandlers() {
   handler('finish', () => observation?.engine.finishSource());
   handler('question', (text, options) => observation?.engine.question(text, options));
   handler('overlay', (action) => {
-    if (action === 'hide') companion.hide();
+    if (action === 'hide') { if (alive(companion)) companion.hide(); }
     else showCompanion();
     enforceCaptureBounds();
   });
   handler('showMain', showDashboard);
   handler('account', () => accounts.status());
-  handler('models', () => accounts.models());
+  handler('models', availableModels);
+  handler('setModel', (value) => observation?.engine.setModel(modelId(value)));
   handler('signIn', (profile) => {
     if (observation || starting) throw new Error('Stop observing before switching accounts.');
     return accounts.signIn(profile);
@@ -337,20 +411,21 @@ function registerHandlers() {
   handler('captureReady', () => {
     if (!observation) return;
     if (observation.kind === 'display') {
-      dashboard.hide();
-      if (safeOverlayPlacement()) companion.showInactive();
-      else companion.hide();
+      if (alive(dashboard)) dashboard.hide();
+      const window = companionWindow();
+      if (safeOverlayPlacement()) window.showInactive();
+      else window.hide();
       enforceCaptureBounds();
     }
   });
   ipcMain.on('see:frame', (event, payload) => {
-    if (event.sender === dashboard.webContents) observation?.engine.frame(payload ?? {});
+    if (alive(dashboard) && event.sender === dashboard.webContents) observation?.engine.frame(payload ?? {});
   });
   ipcMain.on('see:level', (event, db) => {
-    if (event.sender === dashboard.webContents && !speaking) observation?.engine.audioLevel(db);
+    if (alive(dashboard) && event.sender === dashboard.webContents && !speaking) observation?.engine.audioLevel(db);
   });
   ipcMain.on('see:audio', (event, payload) => {
-    if (event.sender === dashboard.webContents) void handleAudio(payload);
+    if (alive(dashboard) && event.sender === dashboard.webContents) void handleAudio(payload);
   });
 }
 
@@ -360,24 +435,9 @@ async function initialize() {
   await mkdir(cwd, { recursive: true, mode: 0o700 });
   accounts = new Accounts({ directory: data, storage: safeStorage, openBrowser: shell.openExternal });
   await accounts.load();
-  dashboard = makeWindow('index.html', { title: 'See Now · Dashboard', width: 1020, height: 760, minWidth: 720, minHeight: 580 });
-  companion = makeWindow('overlay.html', {
-    title: 'See Now · Companion', width: 390, height: 300, minWidth: 300, minHeight: 240,
-    alwaysOnTop: true, skipTaskbar: true, titleBarStyle: 'hidden',
-  });
-  for (const window of [dashboard, companion]) {
-    for (const event of ['hide', 'show', 'minimize', 'restore', 'move', 'resize']) window.on(event, enforceCaptureBounds);
-  }
-  dashboard.on('close', (event) => {
-    if (!quitting) { event.preventDefault(); dashboard.hide(); }
-  });
-  companion.on('close', (event) => {
-    if (!quitting) {
-      event.preventDefault();
-      companion.hide();
-      void stop();
-    }
-  });
+  if (quitting) return;
+  dashboardWindow();
+  companionWindow();
   registerMedia();
   registerHandlers();
   if (!icon.isEmpty()) {
@@ -391,7 +451,7 @@ async function initialize() {
     ]));
   }
   state('idle');
-  dashboard.once('ready-to-show', () => { if (!smoke) dashboard.show(); });
+  dashboard.once('ready-to-show', () => { if (!smoke) showDashboard(); });
   if (smoke) {
     dashboard.webContents.once('did-finish-load', async () => {
       try {
@@ -406,10 +466,33 @@ async function initialize() {
         );
         if (snapshot.title !== 'See Now' || !snapshot.status) throw new Error('Dashboard modules did not initialize.');
         console.log('See Now renderer and main-process bridge initialized.');
+        if (process.env.SEE_NOW_SMOKE_MODELS === '1') {
+          let modelCount = 0;
+          for (let i = 0; i < 50 && modelCount < 2; i++) {
+            modelCount = await dashboard.webContents.executeJavaScript(
+              'Array.from(document.querySelector("#model").options).filter((option) => option.value && option.value !== "__custom__").length',
+            );
+            if (modelCount < 2) await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          if (modelCount < 2) throw new Error('Multiple Codex models were not listed.');
+          console.log(`The dashboard listed ${modelCount} available Codex models.`);
+        }
         const output = process.env.SEE_NOW_SMOKE_SCREENSHOT;
         if (output) await writeFile(output, (await dashboard.webContents.capturePage()).toPNG());
         if (process.env.SEE_NOW_SMOKE_VIDEO) await smokeVideo(process.env.SEE_NOW_SMOKE_VIDEO);
         if (process.env.SEE_NOW_SMOKE_WINDOW === '1') await smokeWindow();
+        if (process.env.SEE_NOW_SMOKE_LIFECYCLE === '1') {
+          const previousDashboard = dashboard;
+          previousDashboard.destroy();
+          app.emit('activate');
+          if (!alive(dashboard) || dashboard === previousDashboard) throw new Error('Dashboard did not reopen.');
+          const previousCompanion = companion;
+          previousCompanion.destroy();
+          showCompanion();
+          if (!alive(companion) || companion === previousCompanion) throw new Error('Companion did not reopen.');
+          app.on('before-quit', () => app.emit('activate'));
+          console.log('Destroyed windows reopened, and activation during quit was ignored.');
+        }
         app.quit();
       } catch (error) {
         console.error(error.message);

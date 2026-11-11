@@ -1,6 +1,6 @@
 {
   "name": "codex-see-now",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "A local desktop companion that lets Codex watch what changes on your screen.",
   "main": "desktop/main.mjs",

@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld('seeNow', {
   info: invoke('info'), sources: invoke('sources'), start: invoke('start'), stop: invoke('stop'),
   finish: invoke('finish'), question: invoke('question'), overlay: invoke('overlay'),
   showMain: invoke('showMain'), account: invoke('account'), signIn: invoke('signIn'),
-  chooseAuth: invoke('chooseAuth'), signOut: invoke('signOut'), models: invoke('models'),
+  chooseAuth: invoke('chooseAuth'), signOut: invoke('signOut'), models: invoke('models'), setModel: invoke('setModel'),
   usage: invoke('usage'), speaking: invoke('speaking'), captureReady: invoke('captureReady'),
   frame: (payload) => ipcRenderer.send('see:frame', payload),
   level: (db) => ipcRenderer.send('see:level', db),

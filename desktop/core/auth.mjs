@@ -242,10 +242,19 @@ export class Accounts {
 
   async models() {
     const { mode, token } = await this.getCredentials();
-    if (mode !== 'plan') return [];
-    const { models = [] } = await fetchJson(API + '/models', { headers: { Authorization: 'Bearer ' + token } });
-    return models.filter(({ visibility, slug }) => visibility === 'list' && slug)
-      .map(({ slug, display_name }) => ({ id: slug, name: display_name ?? slug }));
+    if (mode === 'local') return [];
+    const catalog = await fetchJson(API + '/models', { headers: { Authorization: 'Bearer ' + token } });
+    const entries = catalog.models ?? catalog.data;
+    if (!Array.isArray(entries)) throw new Error('OpenAI returned an unexpected model catalog.');
+    const models = new Map();
+    for (const entry of entries) {
+      const id = entry.slug || entry.id;
+      const modalities = entry.input_modalities ?? entry.inputModalities;
+      if (typeof id !== 'string' || (entry.visibility && entry.visibility !== 'list') ||
+          (Array.isArray(modalities) && !modalities.includes('image'))) continue;
+      models.set(id, { id, name: entry.display_name || id, isDefault: Boolean(entry.is_default) });
+    }
+    return [...models.values()];
   }
 
   async signOut() {

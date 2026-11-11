@@ -26,7 +26,8 @@ npm start
 1. 在 **账号** 里选择连接方式。要复用当前本机 Codex 登录，可以先在终端运行 `codex login`，再点 **使用本机 Codex**。
 2. 在 **采集设置** 里选择屏幕或窗口。加载预览后，拖动鼠标框选区域。也可以选择摄像头（包括系统可见的 OBS 虚拟摄像头）或本地视频。
 3. 选择画质和节奏，点击 **开始观察**。勾选自动分析后，画面变化会触发同一个 See Now 会话里的新回复。可以调高攒图张数，减少请求次数。
-4. 用悬浮窗追问，或点 **看一眼** 发出一次主动观察。**停止**会结束采集、清空待发内容并尝试中断正在运行的 Codex 回复。
+4. 可以在观察中切换 **Codex 模型**。当前回复会继续，下一轮使用新选的模型。
+5. 用悬浮窗追问，或点 **看一眼** 发出一次主动观察。**停止**会结束采集、清空待发内容并尝试中断正在运行的 Codex 回复。
 
 | 连接方式 | 使用方式 |
 | --- | --- |
@@ -34,7 +35,7 @@ npm start
 | 本机 Codex | 使用 Codex CLI 已保存的认证，适合本机开发和自用。 |
 | OpenAI API Key | 填写自己的 Platform API Key，按 API 用量计费。 |
 
-客户端创建自己的观察会话。登录授权、续期和 API Key 在主进程处理，凭据通过操作系统凭据存储加密。ChatGPT 套餐授权详情见 [OpenAI 接入文档](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)。
+模型列表跟随当前连接方式和账号权限。可以刷新列表，或为自定义模型输入模型 ID。客户端创建自己的观察会话。登录授权、续期和 API Key 在主进程处理，凭据通过操作系统凭据存储加密。ChatGPT 套餐授权详情见 [OpenAI 接入文档](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)。
 
 ## 功能与兼容性
 

@@ -19,15 +19,27 @@ let ended = false;
 let playUrl;
 let accountState;
 let authBusy = false;
+let modelsLoading = false;
+let modelNames = new Map();
+let modelInUse;
+let reroutedFrom;
+let modelNotice = '';
+const customOption = '__custom__';
 let spoken = false;
 
 const controls = ['kind', 'source', 'load-sources', 'camera', 'load-cameras', 'file', 'quality', 'pace',
   'batch', 'auto', 'scene', 'speech', 'audio-source', 'asr-url', 'asr-model', 'asr-key',
-  'signin', 'profiles', 'local', 'signout', 'api-key', 'api', 'model'];
+  'signin', 'profiles', 'local', 'signout', 'api-key', 'api'];
 
 function updateControls() {
   for (const id of controls) $(id).disabled = Boolean(active || starting || authBusy);
-  $('start').disabled = Boolean(active || starting || authBusy);
+  $('start').disabled = Boolean(active || starting || authBusy || modelsLoading);
+  if (modelsLoading) {
+    for (const id of ['signin', 'profiles', 'local', 'signout', 'api-key', 'api']) $(id).disabled = true;
+  }
+  $('model').disabled = starting || authBusy || modelsLoading;
+  $('custom-model').disabled = starting || authBusy;
+  $('refresh-models').disabled = starting || authBusy || modelsLoading;
   $('stop').disabled = !active;
   $('signout').disabled ||= !accountState || accountState.mode === 'local';
   $('reset-region').disabled = !region || Boolean(active || starting);
@@ -248,10 +260,11 @@ async function begin() {
     source: audioSource, url: $('asr-url').value || 'http://127.0.0.1:8000/v1',
     model: $('asr-model').value, key: $('asr-key').value,
   } : null;
+  if ($('model').value === customOption && !selectedModel()) throw new Error('请输入模型 ID。');
   const options = {
     kind, sourceId: selected?.id, region, quality: $('quality').value, pace: $('pace').value,
     batch: Number($('batch').value), automatic: $('auto').checked, scene: $('scene').checked,
-    speech: $('speech').checked, model: $('model').value, audio,
+    speech: $('speech').checked, model: selectedModel(), audio,
   };
   starting = true;
   updateControls();
@@ -318,6 +331,9 @@ async function begin() {
 function cleanup() {
   const current = active;
   active = undefined;
+  modelInUse = undefined;
+  reroutedFrom = undefined;
+  updateModelStatus();
   if (current) {
     for (const timer of [current.timer, current.audioTimer, current.audioMeter]) clearInterval(timer);
     if (current.recorder?.state === 'recording') current.recorder.stop();
@@ -340,10 +356,73 @@ function cleanup() {
   updateControls();
 }
 
+function selectedModel() {
+  return $('model').value === customOption ? $('custom-model').value.trim() : $('model').value;
+}
+
+function updateModelStatus() {
+  $('custom-model-field').hidden = $('model').value !== customOption;
+  const target = selectedModel();
+  const current = modelNames.get(modelInUse) ?? modelInUse;
+  if (modelsLoading) $('model-status').textContent = '正在读取模型列表…';
+  else if (current && reroutedFrom) $('model-status').textContent =
+    `本轮已由服务切换到 ${current}${target && target !== reroutedFrom ? ' · 下一轮 ' + (modelNames.get(target) ?? target) : ''}`;
+  else if (current && target && target !== modelInUse) $('model-status').textContent = `本轮 ${current} · 下一轮 ${modelNames.get(target) ?? target}`;
+  else if (current) $('model-status').textContent = `本轮使用 ${current}`;
+  else $('model-status').textContent = modelNotice;
+}
+
+async function loadModels({ reset = false } = {}) {
+  if (modelsLoading) return;
+  const previous = reset ? '' : $('model').value;
+  modelsLoading = true;
+  updateModelStatus();
+  updateControls();
+  try {
+    let models;
+    try {
+      models = await api.models();
+      modelNotice = models.length ? `${models.length} 个可选模型` : '未列出可选模型，可以输入模型 ID。';
+    } catch (error) {
+      if (!reset && modelNames.size) {
+        modelNotice = '刷新失败，仍显示上次读取的模型。';
+        return;
+      }
+      models = [];
+      modelNotice = '无法读取模型列表。检查登录后重试，或输入模型 ID。';
+    }
+    modelNames = new Map(models.map(({ id, name }) => [id, name]));
+    const options = [new Option('使用默认模型', ''),
+      ...models.map(({ id, name }) => new Option(name, id)), new Option('手动输入模型 ID…', customOption)];
+    $('model').replaceChildren(...options);
+    if (previous === customOption || modelNames.has(previous)) $('model').value = previous;
+    else if (active && previous) {
+      $('custom-model').value = previous;
+      $('model').value = customOption;
+    } else if (!active && reset && accountState?.mode !== 'local' && models.length) {
+      $('model').value = (models.find(({ isDefault }) => isDefault) ?? models[0]).id;
+    }
+  } finally {
+    modelsLoading = false;
+    updateControls();
+    updateModelStatus();
+  }
+}
+
+async function changeModel() {
+  updateModelStatus();
+  const model = selectedModel();
+  if ($('model').value === customOption && !model) {
+    $('custom-model').focus();
+    return;
+  }
+  await api.setModel(model);
+}
+
 async function refreshAccount(status) {
-  const oldMode = accountState?.mode;
+  const previous = accountState;
   accountState = status ?? await api.account();
-  if (oldMode && oldMode !== accountState.mode) $('model').value = '';
+  const reset = !previous || previous.mode !== accountState.mode || previous.selected !== accountState.selected;
   const selectedProfile = accountState.profiles.find(({ id }) => id === accountState.selected);
   $('account-status').textContent = accountState.mode === 'plan'
     ? `${selectedProfile?.email ?? 'ChatGPT'} · 使用 ChatGPT 套餐`
@@ -352,12 +431,7 @@ async function refreshAccount(status) {
     id, name: `${email} · ${index + 1}${connected ? '' : ' · 需重新授权'}`,
   })), '选择已保存账号');
   $('profiles').value = accountState.selected ?? '';
-  $('models').replaceChildren();
-  if (accountState.mode === 'plan') {
-    const models = await api.models();
-    $('models').replaceChildren(...models.map(({ id, name }) => new Option(name, id)));
-    if (models.length && !models.some(({ id }) => id === $('model').value)) $('model').value = models[0].id;
-  }
+  await loadModels({ reset });
   if (accountState.warning) report(accountState.warning);
   updateControls();
 }
@@ -373,6 +447,9 @@ function accountAction(action) {
 }
 
 $('kind').onchange = displayMode;
+$('model').onchange = run(changeModel);
+$('custom-model').onchange = run(changeModel);
+$('refresh-models').onclick = run(() => loadModels());
 $('file').onchange = showFile;
 $('source').onchange = run(selectSource);
 $('load-sources').onclick = run(async () => {
@@ -417,6 +494,11 @@ api.listen((event) => {
   const { type, data } = event;
   conversationEvent(event);
   if (type === 'capture-stop') cleanup();
+  if (type === 'model-in-use') {
+    modelInUse = data.id;
+    reroutedFrom = data.from;
+    updateModelStatus();
+  }
   if (type === 'state') {
     $('queue').textContent = data.queued ? `${data.queued} 张待发送` : '';
     $('stats').textContent = `已采样 ${data.frames ?? 0} 帧 · 保留 ${data.retained ?? 0} 帧 · 溢出丢弃 ${data.dropped ?? 0} 张拼图`;

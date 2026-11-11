@@ -26,6 +26,8 @@ export class Observer extends EventEmitter {
   #stopped = false;
   #paused = false;
   #automatic;
+  #retryBlocked = false;
+  #modelRevision = 0;
   #scene;
   #pace;
   #quality;
@@ -113,6 +115,13 @@ export class Observer extends EventEmitter {
     this.#drain();
   }
 
+  setModel(model) {
+    this.#conversation.setModel(model);
+    this.#modelRevision++;
+    this.#retryBlocked = false;
+    void this.#pump();
+  }
+
   async question(value, { peek = false } = {}) {
     if (this.#stopped) return;
     const text = String(value ?? '').trim().slice(0, 4000);
@@ -159,7 +168,7 @@ export class Observer extends EventEmitter {
     const due = Date.now() - this.#lastSent >= this.#pace.gap;
     const enough = this.#queue.length >= this.#batch || (this.#sourceEnded && this.#queue.length) ||
       (this.#lastSent === -Infinity && this.#queue.length) || this.#lines.length;
-    if (!manual && (!this.#automatic || this.#paused || !enough || !due)) return;
+    if (!manual && (!this.#automatic || this.#retryBlocked || this.#paused || !enough || !due)) return;
     this.#pendingQuestion = undefined;
     if (manual?.peek && this.#pipeline) {
       const sheet = this.#pipeline.flushNow(null, 'user');
@@ -176,13 +185,15 @@ export class Observer extends EventEmitter {
     const audio = lines.map(({ from, to, text }) => `[${from.toFixed(1)}–${to.toFixed(1)}s] ${text}`).join('\n');
     const text = (manual?.text ?? AUTO_PROMPT) + (audio ? '\n\nMachine transcript (may contain errors):\n' + audio : '');
     this.#lastSent = Date.now();
+    const modelRevision = this.#modelRevision;
     this.#busy = this.#conversation.ask({ text, sheets });
     this.emit('state', this.state);
     try {
       await this.#busy;
+      this.#retryBlocked = false;
     } catch (error) {
       if (!this.#stopped) {
-        this.#automatic = false;
+        if (modelRevision === this.#modelRevision) this.#retryBlocked = true;
         this.emit('problem', error.message);
       }
     } finally {

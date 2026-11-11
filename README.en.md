@@ -26,7 +26,8 @@ Grant screen, camera, or microphone access when macOS prompts you. Screen access
 1. Choose a connection in **账号** (Account). To reuse the local Codex login, run `codex login` first if needed and select **使用本机 Codex**.
 2. Under **采集设置** (Capture), select a screen or window and drag a rectangle on the preview to crop it. You can also select a camera (including an OBS virtual camera exposed by your system) or a local video.
 3. Choose a quality and pace, then click **开始观察** (Start). With automatic analysis enabled, changes trigger replies in the same See Now conversation. Increase the number of sheets per request to reduce request frequency.
-4. Ask a follow-up in the floating window, or click **看一眼** (Take a look) for a manual observation. **停止** (Stop) ends capture, clears pending frames, and attempts to interrupt an active reply.
+4. Change **Codex 模型** (Codex model) during an observation. The current reply continues and the new model is used on the next turn.
+5. Ask a follow-up in the floating window, or click **看一眼** (Take a look) for a manual observation. **停止** (Stop) ends capture, clears pending frames, and attempts to interrupt an active reply.
 
 | Connection | How it works |
 | --- | --- |
@@ -34,7 +35,7 @@ Grant screen, camera, or microphone access when macOS prompts you. Screen access
 | Local Codex | Reuses the local Codex CLI credentials for development and personal use. |
 | OpenAI API key | Uses your own Platform API key and API billing. |
 
-The app creates its own observation conversations. Authorization, refresh, and API credentials are handled in the main process, with credentials encrypted using the operating system credential store. See the [OpenAI integration guide](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server) for ChatGPT plan authorization.
+Model availability depends on the selected connection and account permissions. You can refresh the list or enter a custom model ID. The app creates its own observation conversations. Authorization, refresh, and API credentials are handled in the main process, with credentials encrypted using the operating system credential store. See the [OpenAI integration guide](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server) for ChatGPT plan authorization.
 
 ## Features and compatibility
 
