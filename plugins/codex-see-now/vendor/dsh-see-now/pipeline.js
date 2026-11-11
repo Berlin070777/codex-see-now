@@ -1,4 +1,4 @@
-// Modified for codex-see-now: flushPending() emits selected frames without adding a duplicate.
+// Modified for codex-see-now: flushPending() plus optional desktop diagnostic limits and a region audio strip.
 /**
  * pipeline.js — 采集帧进来，出图出去。本包唯一有状态的地方。
  *
@@ -579,8 +579,12 @@ export function createPipeline(opts = {}) {
       gain: entry.gain === undefined ? null : +entry.gain.toFixed(2),
       bar: entry.bar === undefined ? null : entry.bar,
     });
+    if (o.diagnosticLimit > 0 && log.length > o.diagnosticLimit) log.shift();
     lastBound = entry.t;
-    if (via === 'cut') cutTimes.push(+entry.t.toFixed(2));
+    if (via === 'cut') {
+      cutTimes.push(+entry.t.toFixed(2));
+      if (o.diagnosticLimit > 0 && cutTimes.length > o.diagnosticLimit) cutTimes.shift();
+    }
     if (lastKeepT !== null) {
       const g = entry.t - lastKeepT;
       gapEwma = gapEwma === 0 ? g : gapEwma + (g - gapEwma) * 0.3;
@@ -738,9 +742,11 @@ export function createPipeline(opts = {}) {
     const n = batch.length;
     const g = gridRects(n, width, height, regionAspect);
     const cells = batch.map((f) => ({ buffer: f.buf, w: width, h: height }));
+    const stripH = o.regionAudioStrip ? Math.min(28, stripHeight(g.width, g.height)) : 0;
     const img = composePacked({
-      frames: cells, rects: g.rects, width: g.width, height: g.height, burn: 'index',
+      frames: cells, rects: g.rects, width: g.width, height: g.height, burn: 'index', stripH,
     });
+    if (stripH) drawAudioStrip(img.buffer, img.width, img.height, g.height, audioOf(batch[0], batch[n - 1]));
     const png = encodePng(img.buffer, img.width, img.height, { level: 3 });
     if (o.queueDepth > 0 && sheets.length >= o.queueDepth) sheets.shift();
     const sheet = {

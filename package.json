@@ -1,0 +1,44 @@
+{
+  "name": "codex-see-now",
+  "version": "0.2.0",
+  "private": true,
+  "description": "A local desktop companion that lets Codex watch what changes on your screen.",
+  "main": "desktop/main.mjs",
+  "author": "Berlin070777",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "package:mac": "electron-builder --mac dir"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "electron": "45.3.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "io.github.berlin070777.seenow",
+    "productName": "See Now",
+    "files": [
+      "desktop/**/*",
+      "plugins/codex-see-now/vendor/dsh-see-now/**/*",
+      "plugins/codex-see-now/package.json",
+      "LICENSE",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "NSCameraUsageDescription": "See Now observes the camera you select.",
+        "NSMicrophoneUsageDescription": "See Now transcribes microphone audio when you enable it.",
+        "NSAudioCaptureUsageDescription": "See Now transcribes system audio when you enable it."
+      },
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false,
+      "icon": "desktop/assets/icon.png"
+    }
+  }
+}

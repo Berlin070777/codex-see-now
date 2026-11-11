@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; connect-src 'none';">
+<title>See Now</title>
+<link rel="stylesheet" href="app.css">
+<script type="module" src="overlay.mjs"></script>
+</head>
+<body class="floating">
+<header class="overlay-bar"><div class="brand"><span class="mark" aria-hidden="true"></span><h1>See Now</h1></div><span class="status" id="status" role="status">待机</span></header>
+<div id="messages" class="messages overlay-messages" role="log"></div>
+<p id="error" class="error" role="alert" hidden></p>
+<form id="question-form" class="composer"><input id="question" aria-label="问 Codex" placeholder="插话或追问" autocomplete="off"><button type="submit" class="primary">发送</button></form>
+<div class="overlay-actions"><button id="peek" class="quiet">看一眼</button><button id="dashboard" class="quiet">控制台</button><button id="hide" class="quiet">隐藏</button><button id="stop" class="secondary">停止</button></div>
+</body>
+</html>

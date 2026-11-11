@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src blob:; connect-src 'none';">
+<title>See Now</title>
+<link rel="stylesheet" href="app.css">
+<script type="module" src="dashboard.mjs"></script>
+</head>
+<body>
+<header class="masthead">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><h1>See Now</h1></div>
+  <div class="mast-actions"><span id="status" class="status" role="status">待机</span><button id="show-overlay" class="secondary">悬浮窗</button></div>
+</header>
+<main class="workspace">
+  <div class="left">
+  <section class="view" aria-label="采集预览">
+    <div class="section-head"><h2>观察范围</h2><button id="reset-region" class="quiet" disabled>清除框选</button></div>
+    <div class="preview" id="preview">
+      <div id="empty-preview" class="empty"><span class="reticle" aria-hidden="true"></span><strong>选择要观察的画面</strong><span>选择屏幕或窗口后，可在预览上拖出区域</span></div>
+      <canvas id="selection" hidden aria-label="在预览上拖动选择区域"></canvas>
+      <video id="video" hidden playsinline></video>
+    </div>
+    <p id="range" class="caption">尚未选择采集源</p>
+    <section class="sheet" aria-label="关键帧">
+      <div class="section-head"><h2>关键帧</h2><span id="timeline" class="caption"></span></div>
+      <img id="sheet" alt="最近一批关键帧拼图" hidden>
+      <p id="empty-sheet" class="caption">开始观察后显示编号和时间。</p>
+      <details class="diagnostics"><summary>采集统计</summary><p id="stats" class="caption">暂无采集</p><p id="reasons" class="caption"></p></details>
+    </section>
+  </section>
+  <section class="conversation" aria-label="观察会话">
+    <div class="section-head"><h2>观察会话</h2><span id="queue" class="caption"></span></div>
+    <div id="messages" class="messages" role="log"></div>
+    <form id="question-form" class="composer"><input id="question" autocomplete="off" aria-label="问 Codex" placeholder="问问刚才发生了什么"><button class="primary" type="submit">发送</button><button id="peek" class="secondary" type="button">看一眼</button></form>
+  </section>
+  </div>
+  <aside class="controls">
+    <section class="card" aria-label="观察设置">
+      <h2>采集设置</h2>
+      <label>来源<select id="kind"><option value="display">屏幕 / 窗口</option><option value="camera">摄像头 / OBS</option><option value="file">本地视频</option></select></label>
+      <div id="display-picker">
+        <label>观察对象<select id="source"><option value="">请先加载屏幕和窗口</option></select></label>
+        <button id="load-sources" class="secondary full">加载屏幕和窗口</button>
+      </div>
+      <div id="camera-picker" hidden>
+        <label>设备<select id="camera"><option value="">默认摄像头</option></select></label>
+        <button id="load-cameras" class="secondary full">刷新摄像头</button>
+      </div>
+      <label id="file-picker" hidden>视频文件<input id="file" type="file" accept="video/*,.mkv,.mov"></label>
+      <div class="pair">
+        <label>画质<select id="quality"><option value="low">低</option><option value="standard" selected>标准</option><option value="high">高</option><option value="ultra">超清</option></select></label>
+        <label>节奏<select id="pace"><option value="calm">省用量</option><option value="normal" selected>标准</option><option value="dense">密集</option><option value="game">高速画面</option></select></label>
+      </div>
+      <label>自动分析的攒图张数<select id="batch"><option value="1">1 张</option><option value="2">2 张</option><option value="3">3 张</option></select></label>
+      <label class="check"><input id="auto" type="checkbox" checked>变化时自动分析</label>
+      <label class="check"><input id="scene" type="checkbox">逐场景单张出图</label>
+      <label class="check"><input id="speech" type="checkbox">朗读回复</label>
+      <details id="audio-settings">
+        <summary>音频转写</summary>
+        <label>音频来源<select id="audio-source"><option value="">关闭</option><option value="source">所选画面 / 视频的声音</option><option value="mic">麦克风</option></select></label>
+        <label>转写服务 URL<input id="asr-url" type="url" placeholder="http://127.0.0.1:8000/v1"></label>
+        <label>转写模型<input id="asr-model" placeholder="模型名称"></label>
+        <label>转写 API Key（可选）<input id="asr-key" type="password" autocomplete="off"></label>
+      </details>
+      <div class="pair actions"><button id="start" class="primary">开始观察</button><button id="stop" class="secondary" disabled>停止</button></div>
+      <p id="error" class="error" role="alert" hidden></p>
+    </section>
+    <section class="card account">
+      <h2>账号</h2>
+      <p id="account-status" class="caption"></p>
+      <button id="signin" class="secondary full">Continue with ChatGPT</button>
+      <label>已保存账号<select id="profiles"><option value="">选择账号</option></select></label>
+      <div class="pair"><button id="local" class="secondary">使用本机 Codex</button><button id="signout" class="secondary">断开</button></div>
+      <label>OpenAI API Key<input id="api-key" type="password" autocomplete="off" placeholder="sk-…"></label>
+      <div class="pair"><button id="api" class="secondary">使用 API Key</button><button id="usage" class="quiet">查看套餐用量</button></div>
+      <label>Codex 模型<input id="model" list="models" placeholder="使用默认模型"><datalist id="models"></datalist></label>
+    </section>
+  </aside>
+</main>
+</body>
+</html>
