@@ -99,7 +99,7 @@ export class AppServer extends EventEmitter {
   }
 
   async initialize() {
-    await this.request('initialize', { clientInfo: { name: NAME, title: 'See Now', version: '0.2.1' } });
+    await this.request('initialize', { clientInfo: { name: NAME, title: 'See Now', version: '0.2.2' } });
     this.#write({ method: 'initialized', params: {} });
   }
 

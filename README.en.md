@@ -24,7 +24,7 @@ npm start
 Grant screen, camera, or microphone access when macOS prompts you. Screen access is under **System Settings → Privacy & Security → Screen & System Audio Recording**. System audio capture depends on the operating system, selected source, and Electron permissions. The macOS packaging configuration declares the audio usage purpose.
 
 1. Choose a connection in **账号** (Account). To reuse the local Codex login, run `codex login` first if needed and select **使用本机 Codex**.
-2. Under **采集设置** (Capture), select a screen or window and drag a rectangle on the preview to crop it. You can also select a camera (including an OBS virtual camera exposed by your system) or a local video.
+2. In **Capture settings**, choose **用 macOS 选择窗口** (Choose a window with macOS) on macOS 15 or later and select a window in the system picker. You can also load the screen and window list, choose a camera (including an OBS virtual camera), or open a local video. Drag on the preview to crop. If the list requests Screen Recording permission, grant it in System Settings and reopen See Now.
 3. Choose a quality and pace, then click **开始观察** (Start). With automatic analysis enabled, changes trigger replies in the same See Now conversation. Increase the number of sheets per request to reduce request frequency.
 4. Change **Codex 模型** (Codex model) during an observation. The current reply continues and the new model is used on the next turn.
 5. Ask a follow-up in the floating window, or click **看一眼** (Take a look) for a manual observation. **停止** (Stop) ends capture, clears pending frames, and attempts to interrupt an active reply.

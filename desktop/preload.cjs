@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const invoke = (name) => (...args) => ipcRenderer.invoke('see:' + name, ...args);
 contextBridge.exposeInMainWorld('seeNow', {
-  info: invoke('info'), sources: invoke('sources'), start: invoke('start'), stop: invoke('stop'),
+  info: invoke('info'), sources: invoke('sources'), systemPicker: invoke('systemPicker'), screenSettings: invoke('screenSettings'), start: invoke('start'), stop: invoke('stop'),
   finish: invoke('finish'), question: invoke('question'), overlay: invoke('overlay'),
   showMain: invoke('showMain'), account: invoke('account'), signIn: invoke('signIn'),
   chooseAuth: invoke('chooseAuth'), signOut: invoke('signOut'), models: invoke('models'), setModel: invoke('setModel'),

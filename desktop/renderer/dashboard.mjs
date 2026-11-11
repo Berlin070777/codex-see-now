@@ -13,6 +13,10 @@ let selected;
 let region;
 let dragging;
 let image;
+let windowPreview;
+let pickingWindow = false;
+let previewGeneration = 0;
+let loadingSources = false;
 let active;
 let starting = false;
 let ended = false;
@@ -27,13 +31,17 @@ let modelNotice = '';
 const customOption = '__custom__';
 let spoken = false;
 
-const controls = ['kind', 'source', 'load-sources', 'camera', 'load-cameras', 'file', 'quality', 'pace',
+const controls = ['camera', 'load-cameras', 'file', 'quality', 'pace',
   'batch', 'auto', 'scene', 'speech', 'audio-source', 'asr-url', 'asr-model', 'asr-key',
   'signin', 'profiles', 'local', 'signout', 'api-key', 'api'];
 
 function updateControls() {
   for (const id of controls) $(id).disabled = Boolean(active || starting || authBusy);
-  $('start').disabled = Boolean(active || starting || authBusy || modelsLoading);
+  for (const id of ['kind', 'source', 'load-sources', 'system-window', 'stop-window-preview']) {
+    $(id).disabled = Boolean(active || starting || authBusy || pickingWindow || loadingSources);
+  }
+  $('stop-window-preview').hidden = !windowPreview;
+  $('start').disabled = Boolean(active || starting || authBusy || modelsLoading || pickingWindow || loadingSources);
   if (modelsLoading) {
     for (const id of ['signin', 'profiles', 'local', 'signout', 'api-key', 'api']) $(id).disabled = true;
   }
@@ -58,6 +66,7 @@ function replaceOptions(select, rows, placeholder) {
 }
 
 function displayMode() {
+  stopWindowPreview();
   const kind = $('kind').value;
   $('display-picker').hidden = kind !== 'display';
   $('camera-picker').hidden = kind !== 'camera';
@@ -90,25 +99,107 @@ function updateRange() {
   updateControls();
 }
 
-async function selectSource() {
-  const item = sources.get($('source').value);
-  selected = item;
+function resetPreview() {
   region = undefined;
   image = undefined;
-  updateRange();
+  dragging = undefined;
   preview.hidden = true;
   $('empty-preview').hidden = false;
+  updateRange();
+}
+
+function stopWindowPreview() {
+  previewGeneration++;
+  if (!windowPreview) return;
+  windowPreview.getTracks().forEach((track) => track.stop());
+  windowPreview = undefined;
+  selected = undefined;
+  resetPreview();
+}
+
+async function selectSource() {
+  stopWindowPreview();
+  const item = sources.get($('source').value);
+  selected = item;
+  resetPreview();
   if (!item?.thumbnail) return;
   const next = new Image();
   next.src = item.thumbnail;
   await next.decode();
-  if (selected !== item) return;
+  if (selected === item) showPreview(next, next.naturalWidth, next.naturalHeight);
+}
+
+function showPreview(next, width, height) {
   image = next;
-  preview.width = image.naturalWidth;
-  preview.height = image.naturalHeight;
+  preview.width = width;
+  preview.height = height;
   preview.hidden = false;
   $('empty-preview').hidden = true;
   drawSelection();
+}
+
+async function chooseSystemWindow() {
+  pickingWindow = true;
+  updateControls();
+  const generation = ++previewGeneration;
+  $('source-status').textContent = '正在等待你在 macOS 选择窗口…';
+  const player = document.createElement('video');
+  let stream;
+  try {
+    await api.systemPicker(true);
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'window' },
+        audio: $('audio-source').value === 'source',
+        monitorTypeSurfaces: 'exclude',
+      });
+    } finally {
+      await api.systemPicker(false);
+    }
+    if (generation !== previewGeneration) return;
+    const track = stream.getVideoTracks()[0];
+    if (track?.getSettings().displaySurface !== 'window') {
+      throw new Error('请在 macOS 选择器中选择「窗口」，然后点选一个窗口。');
+    }
+    player.muted = true;
+    player.srcObject = stream;
+    await player.play();
+    if (generation !== previewGeneration) return;
+    if (track.readyState !== 'live' || !player.videoWidth) throw new Error('无法读取窗口画面。请重新选择窗口。');
+
+    const thumbnail = document.createElement('canvas');
+    const scale = Math.min(1, 640 / Math.max(player.videoWidth, player.videoHeight));
+    thumbnail.width = Math.max(1, Math.round(player.videoWidth * scale));
+    thumbnail.height = Math.max(1, Math.round(player.videoHeight * scale));
+    thumbnail.getContext('2d').drawImage(player, 0, 0, thumbnail.width, thumbnail.height);
+
+    stopWindowPreview();
+    windowPreview = stream;
+    stream = undefined;
+    selected = { systemWindow: true, name: track.label || 'macOS 所选窗口' };
+    $('source').value = '';
+    resetPreview();
+    showPreview(thumbnail, thumbnail.width, thumbnail.height);
+    $('source-status').textContent = '已选择窗口。可拖动选区，再点「开始观察」。';
+    track.addEventListener('ended', () => {
+      if (windowPreview?.getVideoTracks()[0] !== track) return;
+      stopWindowPreview();
+      $('source-status').textContent = '窗口共享已结束。';
+    });
+  } catch (error) {
+    if (generation !== previewGeneration) return;
+    if (['AbortError', 'NotAllowedError'].includes(error.name)) {
+      $('source-status').textContent = 'macOS 未共享窗口。可以重新选择，或加载下方列表。';
+    } else {
+      $('source-status').textContent = error.message;
+    }
+  } finally {
+    player.pause();
+    player.srcObject = null;
+    stream?.getTracks().forEach((track) => track.stop());
+    pickingWindow = false;
+    updateControls();
+  }
 }
 
 function drawSelection() {
@@ -184,6 +275,11 @@ function inputTime(current) {
 
 function captureFrame(current) {
   if (active !== current || video.readyState < 2 || video.videoWidth === 0 || ended) return;
+  if (current.systemWindow && current.stream.getVideoTracks()[0]?.getSettings().displaySurface !== 'window') {
+    void api.stop();
+    report('共享来源已变更。请重新选择一个窗口。');
+    return;
+  }
   const crop = current.region ?? { x: 0, y: 0, width: 1, height: 1 };
   const x = Math.ceil(crop.x * video.videoWidth);
   const y = Math.ceil(crop.y * video.videoHeight);
@@ -251,18 +347,21 @@ function recordAudio(current, track) {
 }
 
 async function begin() {
-  if (starting || active) return;
+  if (starting || active || pickingWindow) return;
   const kind = $('kind').value;
   if (kind === 'display' && !selected) throw new Error('请先加载并选择屏幕或窗口。');
   if (kind === 'file' && !$('file').files[0]) throw new Error('请先选择一个本地视频。');
   const audioSource = $('audio-source').value;
+  if (selected?.systemWindow && windowPreview?.getVideoTracks()[0]?.readyState !== 'live') {
+    throw new Error('窗口共享已结束。请重新选择窗口。');
+  }
   const audio = audioSource ? {
     source: audioSource, url: $('asr-url').value || 'http://127.0.0.1:8000/v1',
     model: $('asr-model').value, key: $('asr-key').value,
   } : null;
   if ($('model').value === customOption && !selectedModel()) throw new Error('请输入模型 ID。');
   const options = {
-    kind, sourceId: selected?.id, region, quality: $('quality').value, pace: $('pace').value,
+    kind, sourceId: selected?.id, systemWindow: selected?.systemWindow, region, quality: $('quality').value, pace: $('pace').value,
     batch: Number($('batch').value), automatic: $('auto').checked, scene: $('scene').checked,
     speech: $('speech').checked, model: selectedModel(), audio,
   };
@@ -271,10 +370,20 @@ async function begin() {
   try {
     await api.start(options);
     ended = false;
-    const current = { kind, region, quality: options.quality, started: performance.now(), lastMediaTime: 0, offset: 0 };
+    const current = {
+      kind, region, systemWindow: options.systemWindow, quality: options.quality,
+      started: performance.now(), lastMediaTime: 0, offset: 0,
+    };
     active = current;
     $('asr-key').value = '';
-    if (kind === 'display') {
+    if (current.systemWindow) {
+      current.stream = windowPreview;
+      windowPreview = undefined;
+      const track = current.stream?.getVideoTracks()[0];
+      if (track?.readyState !== 'live' || track.getSettings().displaySurface !== 'window') {
+        throw new Error('窗口共享已结束或来源已变更。请重新选择窗口。');
+      }
+    } else if (kind === 'display') {
       current.stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: audioSource === 'source' });
     } else if (kind === 'camera') {
       const deviceId = $('camera').value;
@@ -306,6 +415,7 @@ async function begin() {
     video.hidden = kind === 'display';
     if (kind === 'display') preview.hidden = !image;
     await api.captureReady();
+    if (active !== current) return;
     current.timer = setInterval(() => captureFrame(current), 125);
     if (audio) {
       try {
@@ -339,6 +449,11 @@ function cleanup() {
     if (current.recorder?.state === 'recording') current.recorder.stop();
     for (const stream of [current.stream, current.mic, current.audioStream]) stream?.getTracks().forEach((track) => track.stop());
     void current.audioContext?.close().catch(() => {});
+  }
+  if (current?.systemWindow) {
+    selected = undefined;
+    resetPreview();
+    $('source-status').textContent = '窗口共享已结束。';
   }
   video.pause();
   video.srcObject = null;
@@ -452,12 +567,46 @@ $('custom-model').onchange = run(changeModel);
 $('refresh-models').onclick = run(() => loadModels());
 $('file').onchange = showFile;
 $('source').onchange = run(selectSource);
+$('system-window').onclick = run(chooseSystemWindow);
+$('stop-window-preview').onclick = () => {
+  stopWindowPreview();
+  $('source-status').textContent = '窗口共享已结束。';
+};
+$('screen-settings').onclick = run(() => api.screenSettings());
 $('load-sources').onclick = run(async () => {
-  const items = await api.sources();
-  sources.clear();
-  for (const item of items) sources.set(item.id, item);
-  replaceOptions($('source'), items, '请选择屏幕或窗口');
-  if (!items.length) throw new Error('未找到可采集的屏幕或窗口。检查系统录屏权限。');
+  loadingSources = true;
+  $('source-status').textContent = '正在加载屏幕和窗口…';
+  $('screen-settings').hidden = true;
+  updateControls();
+  try {
+    const { items, issue } = await api.sources();
+    const select = $('source');
+    const previous = select.value;
+    sources.clear();
+    for (const item of items) sources.set(item.id, item);
+    select.replaceChildren(new Option(items.length ? '请选择屏幕或窗口' : '没有可用来源', ''));
+    for (const [prefix, label] of [['window:', '窗口'], ['screen:', '屏幕']]) {
+      const options = items.filter(({ id }) => id.startsWith(prefix)).map(({ id, name }) => new Option(name, id));
+      if (!options.length) continue;
+      const group = document.createElement('optgroup');
+      group.label = label;
+      group.append(...options);
+      select.append(group);
+    }
+    if (sources.has(previous)) select.value = previous;
+    if (!windowPreview) await selectSource();
+    $('screen-settings').hidden = issue !== 'permission';
+    if (issue === 'permission') {
+      $('source-status').textContent = '列表需要系统录屏权限。授权后退出并重新打开 See Now。';
+    } else if (issue === 'no-preview') {
+      $('source-status').textContent = '已加载来源。此列表暂时无法提供预览。';
+    } else {
+      $('source-status').textContent = items.length ? '' : '未找到可采集的屏幕或窗口。';
+    }
+  } finally {
+    loadingSources = false;
+    updateControls();
+  }
 });
 $('load-cameras').onclick = run(async () => {
   const items = (await navigator.mediaDevices.enumerateDevices()).filter((item) => item.kind === 'videoinput');
@@ -494,6 +643,10 @@ api.listen((event) => {
   const { type, data } = event;
   conversationEvent(event);
   if (type === 'capture-stop') cleanup();
+  if (type === 'stop-window-preview') {
+    stopWindowPreview();
+    $('source-status').textContent = '';
+  }
   if (type === 'model-in-use') {
     modelInUse = data.id;
     reroutedFrom = data.from;
@@ -522,5 +675,9 @@ api.listen((event) => {
   }
 });
 
-void api.info().then((info) => { quality = info.quality; updateState(info.state); }).catch((error) => report(error.message));
+void api.info().then((info) => {
+  quality = info.quality;
+  $('system-window').hidden = !info.supportsSystemPicker;
+  updateState(info.state);
+}).catch((error) => report(error.message));
 void refreshAccount().catch((error) => report(error.message));

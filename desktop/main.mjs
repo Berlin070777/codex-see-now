@@ -23,6 +23,8 @@ let speechProcess;
 let starting = false;
 let startEpoch = 0;
 const smoke = process.argv.includes('--ui-smoke');
+const supportsSystemPicker = process.platform === 'darwin' && Number(process.getSystemVersion().split('.')[0]) >= 15;
+let systemPickerOwner;
 const icon = nativeImage.createFromPath(join(here, 'assets', 'tray.png'));
 
 app.setName('See Now');
@@ -74,12 +76,19 @@ function dashboardWindow() {
   dashboard = window;
   watchBounds(window);
   window.on('close', (event) => {
-    if (!quitting) { event.preventDefault(); window.hide(); }
+    if (!quitting) {
+      event.preventDefault();
+      window.hide();
+      if (!observation && !starting) send(window, { type: 'stop-window-preview' });
+    }
   });
   window.on('closed', () => {
     if (dashboard !== window) return;
     dashboard = undefined;
-    if (!quitting) void stop();
+    if (!quitting) {
+      if (systemPickerOwner) setSystemPicker(false);
+      void stop();
+    }
   });
   return window;
 }
@@ -129,7 +138,7 @@ function state(status, extra = {}) {
 }
 
 function safeOverlayPlacement() {
-  if (!observation || observation.kind !== 'display' || observation.source?.id.startsWith('window:')) return true;
+  if (!observation || observation.kind !== 'display' || observation.systemWindow || observation.source?.id.startsWith('window:')) return true;
   const selected = screen.getAllDisplays().find(({ id }) => String(id) === observation.source?.display_id);
   if (!selected) return false;
   const region = observation.region ?? { x: 0, y: 0, width: 1, height: 1 };
@@ -168,7 +177,7 @@ function overlapsDisplay(window, active) {
 }
 
 function enforceCaptureBounds() {
-  if (!observation || observation.kind !== 'display' || !observation.source.id.startsWith('screen:')) return;
+  if (!observation || observation.kind !== 'display' || !observation.source?.id.startsWith('screen:')) return;
   const paused = overlapsDisplay(dashboard, observation) || overlapsDisplay(companion, observation);
   if (observation.engine.state.paused !== paused) observation.engine.pause(paused);
 }
@@ -202,38 +211,67 @@ function validateRegion(region) {
   return { x, y, width, height };
 }
 
-function registerMedia() {
+function setSystemPicker(enabled) {
   const ses = session.defaultSession;
-  ses.setPermissionCheckHandler((contents, permission) =>
-    alive(dashboard) && contents === dashboard.webContents && ['media', 'display-capture'].includes(permission));
-  ses.setPermissionRequestHandler((contents, permission, callback) => {
-    callback(alive(dashboard) && contents === dashboard.webContents && ['media', 'display-capture'].includes(permission));
-  });
+  systemPickerOwner = enabled ? dashboard : undefined;
   ses.setDisplayMediaRequestHandler((request, callback) => {
-    if (!observation?.source || !observation.mediaReady || !alive(dashboard) || request.frame !== dashboard.webContents.mainFrame) {
+    if (enabled || !observation?.source || !observation.mediaReady || !alive(dashboard) || request.frame !== dashboard.webContents.mainFrame) {
       callback({});
       return;
     }
     observation.mediaReady = false;
     callback({ video: observation.source, ...(observation.loopback && request.audioRequested ? { audio: 'loopback' } : {}) });
-  });
+  }, { useSystemPicker: enabled });
+}
+
+function registerMedia() {
+  const ses = session.defaultSession;
+  const permitted = (contents, permission) =>
+    alive(dashboard) && contents === dashboard.webContents && ['media', 'display-capture'].includes(permission);
+  ses.setPermissionCheckHandler(permitted);
+  ses.setPermissionRequestHandler((contents, permission, callback) => callback(permitted(contents, permission)));
+  setSystemPicker(false);
 }
 
 async function listSources() {
-  const items = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 640, height: 400 } });
+  let items;
+  let issue;
+  try {
+    items = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 640, height: 400 } });
+  } catch {
+    const permission = process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : null;
+    if (permission && permission !== 'granted' && permission !== 'unknown') {
+      sources.clear();
+      return { items: [], issue: 'permission' };
+    }
+    // A failure to enumerate one source type or produce a thumbnail should not block the other type.
+    items = [];
+    for (const type of ['window', 'screen']) {
+      try {
+        items.push(...await desktopCapturer.getSources({ types: [type], thumbnailSize: { width: 0, height: 0 } }));
+      } catch {
+        issue = 'unavailable';
+      }
+    }
+    if (items.length) issue = 'no-preview';
+  }
   const own = new Set([dashboard, companion].filter(alive)
     .map((window) => window.getMediaSourceId().split(':').slice(0, 2).join(':')));
   sources = new Map(items.filter((item) => !own.has(item.id.split(':').slice(0, 2).join(':'))).map((item) => [item.id, item]));
-  return [...sources.values()].map((item) => ({
-    id: item.id, name: item.name, thumbnail: item.thumbnail.isEmpty() ? null : item.thumbnail.toDataURL(),
-  }));
+  return {
+    items: [...sources.values()].map((item) => ({
+      id: item.id, name: item.name, thumbnail: item.thumbnail.isEmpty() ? null : item.thumbnail.toDataURL(),
+    })),
+    issue,
+  };
 }
 
 async function start(options) {
   if (observation || starting) throw new Error('Stop the current observation first.');
   if (!['display', 'camera', 'file'].includes(options.kind)) throw new Error('Choose a capture source.');
-  const source = options.kind === 'display' ? sources.get(options.sourceId) : null;
-  if (options.kind === 'display' && !source) throw new Error('Choose a screen or window first.');
+  const systemWindow = options.kind === 'display' && options.systemWindow === true && supportsSystemPicker;
+  const source = options.kind === 'display' && !systemWindow ? sources.get(options.sourceId) : null;
+  if (options.kind === 'display' && !source && !systemWindow) throw new Error('Choose a screen or window first.');
   const region = validateRegion(options.region);
   const audio = options.audio ? {
     url: transcriptionUrl(options.audio.url),
@@ -264,7 +302,7 @@ async function start(options) {
     },
   });
   const active = {
-    engine, kind: options.kind, source, region, audio,
+    engine, kind: options.kind, source, systemWindow, region, audio,
     loopback: options.audio?.source === 'source',
     mediaReady: true,
     controller: new AbortController(),
@@ -308,7 +346,10 @@ async function start(options) {
 
 async function stop() {
   startEpoch++;
-  if (!observation) return;
+  if (!observation) {
+    if (alive(dashboard)) send(dashboard, { type: 'stop-window-preview' });
+    return;
+  }
   const active = observation;
   observation = undefined;
   active.controller.abort();
@@ -379,8 +420,16 @@ async function availableModels() {
 }
 
 function registerHandlers() {
-  handler('info', () => ({ state: lastState, paces: Object.keys(PACES), quality: QUALITY, smoke }));
+  handler('info', () => ({ state: lastState, paces: Object.keys(PACES), quality: QUALITY, smoke, supportsSystemPicker }));
   handler('sources', listSources);
+  handler('systemPicker', (enabled) => {
+    if (!supportsSystemPicker) throw new Error('The macOS window picker requires macOS 15 or later.');
+    if (enabled === true && (observation || starting || systemPickerOwner)) throw new Error('Finish the current selection first.');
+    setSystemPicker(enabled === true);
+  });
+  handler('screenSettings', () => {
+    if (process.platform === 'darwin') return shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+  });
   handler('start', start);
   handler('stop', stop);
   handler('finish', () => observation?.engine.finishSource());

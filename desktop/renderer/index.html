@@ -18,7 +18,7 @@
   <section class="view" aria-label="采集预览">
     <div class="section-head"><h2>观察范围</h2><button id="reset-region" class="quiet" disabled>清除框选</button></div>
     <div class="preview" id="preview">
-      <div id="empty-preview" class="empty"><span class="reticle" aria-hidden="true"></span><strong>选择要观察的画面</strong><span>选择屏幕或窗口后，可在预览上拖出区域</span></div>
+      <div id="empty-preview" class="empty"><span class="reticle" aria-hidden="true"></span><strong>选择要观察的画面</strong><span>在屏幕或窗口预览上拖动可框选区域</span></div>
       <canvas id="selection" hidden aria-label="在预览上拖动选择区域"></canvas>
       <video id="video" hidden playsinline></video>
     </div>
@@ -41,8 +41,12 @@
       <h2>采集设置</h2>
       <label>来源<select id="kind"><option value="display">屏幕 / 窗口</option><option value="camera">摄像头 / OBS</option><option value="file">本地视频</option></select></label>
       <div id="display-picker">
+        <button id="system-window" class="primary full" type="button" hidden>用 macOS 选择窗口</button>
+        <button id="stop-window-preview" class="quiet full" type="button" hidden>结束窗口预览</button>
         <label>观察对象<select id="source"><option value="">请先加载屏幕和窗口</option></select></label>
         <button id="load-sources" class="secondary full">加载屏幕和窗口</button>
+        <p id="source-status" class="caption" role="status"></p>
+        <button id="screen-settings" class="quiet full" type="button" hidden>打开录屏设置</button>
       </div>
       <div id="camera-picker" hidden>
         <label>设备<select id="camera"><option value="">默认摄像头</option></select></label>

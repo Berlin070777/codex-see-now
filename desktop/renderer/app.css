@@ -11,7 +11,7 @@
   font: 14px/1.48 Inter, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 * { box-sizing: border-box; }
-[hidden] { display: none !important; }
+[hidden], #source-status:empty { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--text); }
 button, input, select { font: inherit; }
 button { min-height: 35px; border: 1px solid transparent; border-radius: 7px; padding: 6px 13px; cursor: pointer; color: var(--text); }
